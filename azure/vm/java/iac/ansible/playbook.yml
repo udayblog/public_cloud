@@ -1,0 +1,8 @@
+---
+- name: Set up machine
+  hosts: all
+  tasks:
+   - name: installing java
+     ansible.builtin.shell: sudo yum -y install java-11-openjdk 
+   - name: installing docker
+     ansible.builtin.shell: sudo yum -y install docker
