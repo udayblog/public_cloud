@@ -1,0 +1,73 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kedaloganalytics
+  namespace: app-namepace # Name of the namespace where this secret will be deployed
+  lables:
+    app: kedaloganalytics
+type: Opaque
+data:
+  tenantId: "" # Base64 encoded value of Azure tenant id
+  clientId: "" # Base64 encoded value of Azure client id
+  clientSecret: "" # Base64 encoded value of Azure client secret
+  workspaceId: "" # Base64 encoded value of log analytics workspace id
+  subscriptionId: "" # Base64 encoded value of Azure subscription id
+
+---
+
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: trigger-auth-kedaloganalytics
+  namespace: app-namespace
+spec:
+  secretTargetRef:
+    - parameter: tenantId
+      name: kedaloganalytics
+      key: tenantId
+    - parameter: subscriptionId
+      name: kedaloganalytics
+      key: subscriptionId
+    - parameter: clientId
+      name: kedaloganalytics
+      key: clientId
+    - parameter: clientSecret
+      name: kedaloganalytics
+      key: clientSecret
+    - parameter: workspacceId
+      name: kedaloganalytics
+      key: workspacceId
+
+---
+
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: kedaloganalytics-consumer-scaled-object
+  namespace: app-namespace
+  labels:
+    deploymentName: kedaloganalytics-consumer
+spec:
+  scaleTargetRef:
+    kind: Deployment
+    name: app # This is the deployment which need to be scaled
+  pollingInterval: 30
+  cooldownPeriod: 30
+  minReplicaCount: 1
+  maxReplicaCount: 10
+  triggers:
+    - type: azure-log-analytics
+      metadata:
+        workspaceId: "" #Log analytics workspace id
+        # Below query counts the number of requests coming to ApplicationGateway in the past 5 minutes and triggers
+        # auto scaling of pod if those requests exceed 10 as given for Threshold value
+        query: |
+          AzureDiagnostics
+          | where ResourceType == "APPLICATIONGATEWAYS" and OperationName == "ApplicationGatewayAccess" and TimeGenerated > ago(5m)
+          | summarize AggregatedValue = count() by bin(TimeGenerated, 1s), _ResourceId
+          | project AggregatedValue, Threshold = 10
+          | sort by AggregatedValue
+          | limit 1
+        threshold: "10"
+      authenticationRef:
+        name: trigger-auth-kedaloganalytics
